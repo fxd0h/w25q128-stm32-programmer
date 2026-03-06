@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "main.h"
 #include "stm32h7xx_nucleo.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -106,21 +107,41 @@ VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance) {
 }
 
 /* USER CODE BEGIN 2 */
+#include <string.h>
+extern UART_HandleTypeDef hcom_uart[];
+
 static uint32_t tx_tick = 0;
 static uint32_t tx_state = 0; /* 0=idle, 1=writing */
 static uint8_t tx_msg[] __attribute__((section(".RAM_D2"))) = "HELLO\r\n";
 static uint32_t write_wait_count = 0;
 static uint32_t write_next_count = 0;
 static uint32_t write_error_count = 0;
+static uint32_t last_wr_status = 99;
+static uint32_t dbg_tick = 0;
 
-/**
- * @brief  Diagnostic: periodic write + LED status reporting
- */
+/* Fast non-blocking UART debug: max 10ms */
+static void dbg(const char *s, uint16_t len) {
+  HAL_UART_Transmit(&hcom_uart[0], (uint8_t *)s, len, 10);
+}
+
 void usbx_cdc_acm_read_write_run(void) {
+  /* Short debug every 5s */
+  if (HAL_GetTick() - dbg_tick >= 5000) {
+    dbg_tick = HAL_GetTick();
+    char b[48];
+    int n = snprintf(
+        b, sizeof(b), "S%u T%lu W%lu/%lu/%lu R%lu\r\n",
+        (unsigned)
+            _ux_system_slave->ux_system_slave_device.ux_slave_device_state,
+        (unsigned long)tx_state, (unsigned long)write_wait_count,
+        (unsigned long)write_next_count, (unsigned long)write_error_count,
+        (unsigned long)last_wr_status);
+    dbg(b, (uint16_t)n);
+  }
+
   if (cdc_acm == UX_NULL)
     return;
 
-  /* Check device state */
   UX_SLAVE_DEVICE *device = &_ux_system_slave->ux_system_slave_device;
   if (device->ux_slave_device_state != UX_DEVICE_CONFIGURED)
     return;
@@ -139,12 +160,11 @@ void usbx_cdc_acm_read_write_run(void) {
     ULONG actual = 0;
     status = ux_device_class_cdc_acm_write_run(cdc_acm, tx_msg,
                                                sizeof(tx_msg) - 1, &actual);
+    last_wr_status = status;
     if (status == UX_STATE_NEXT) {
-      BSP_LED_Toggle(LED_GREEN); /* Success! */
       write_next_count++;
       tx_state = 0;
     } else if (status < UX_STATE_NEXT) {
-      BSP_LED_Toggle(LED_YELLOW); /* Error/Exit */
       write_error_count++;
       tx_state = 0;
     } else {

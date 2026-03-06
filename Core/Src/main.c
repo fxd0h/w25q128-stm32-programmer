@@ -23,6 +23,9 @@
 /* USER CODE BEGIN Includes */
 #include "app_usbx.h"
 #include "ux_device_cdc_acm.h"
+#include <stdio.h>
+#include <string.h>
+extern volatile uint32_t usbx_debug_phase;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -124,6 +127,10 @@ int main(void) {
   if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE) {
     Error_Handler();
   }
+  {
+    const char *msg = "\r\n=== STM32H743 USB CDC Debug ===\r\n";
+    HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)msg, strlen(msg), 100);
+  }
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -131,7 +138,14 @@ int main(void) {
   if (MX_USBX_Init() != UX_SUCCESS) {
     Error_Handler();
   }
+  {
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "USBX OK phase=%u\r\n",
+                     (unsigned)usbx_debug_phase);
+    HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)buf, n, 100);
+  }
   BSP_LED_On(LED_GREEN); /* Signal: firmware running */
+  HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)"LOOP\r\n", 6, 50);
 
   uint32_t heartbeat_tick = 0;
   while (1) {
@@ -147,6 +161,7 @@ int main(void) {
     if (HAL_GetTick() - heartbeat_tick >= 500) {
       heartbeat_tick = HAL_GetTick();
       BSP_LED_Toggle(LED_RED);
+      HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)".", 1, 10);
       /* Yellow LED = USB device configured */
       if (_ux_system_slave->ux_system_slave_device.ux_slave_device_state ==
           UX_DEVICE_CONFIGURED)
