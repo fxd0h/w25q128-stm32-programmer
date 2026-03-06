@@ -169,9 +169,11 @@ class W25QFlasher:
         time.sleep(0.003)
         return len(r) >= 1 and r[0] == ACK_OK
 
-    def self_test(self):
+    def self_test(self, num_blocks=1):
         """Run internal SPI self-test on MCU (no CDC data involved)."""
-        r = self._cmd(bytes([CMD_SELF_TEST]), 4, timeout=10)
+        # Timeout: erase ~1s/block + program ~2s/block + verify ~1s/block
+        timeout = max(10, num_blocks * 5)
+        r = self._cmd(bytes([CMD_SELF_TEST, num_blocks]), 5, timeout=timeout)
         return r
 
 
@@ -454,12 +456,15 @@ def do_test(f, args):
 
 
 def do_selftest(f, args):
-    print('Running internal SPI self-test on MCU...')
-    print('(Erase + Write + Verify 1KB at 0x1FF000 — no CDC data transfer)')
-    r = f.self_test()
-    if len(r) >= 3 and r[0] == ACK_OK:
-        passed = (r[1] << 8) | r[2]
-        print(f'SELF-TEST PASSED: {passed}/1024 bytes verified')
+    num_blocks = int(args.blocks) if args.blocks else 2
+    size_kb = num_blocks * 64
+    print(f'Running internal SPI self-test: {num_blocks} blocks ({size_kb} KB)...')
+    print(f'(Erase + Write + Verify — no CDC data transfer)')
+    r = f.self_test(num_blocks)
+    if len(r) >= 5 and r[0] == ACK_OK:
+        passed = (r[1] << 24) | (r[2] << 16) | (r[3] << 8) | r[4]
+        total = num_blocks * 64 * 1024
+        print(f'SELF-TEST PASSED: {passed}/{total} bytes verified')
         return True
     elif len(r) >= 2 and r[0] == ACK_ERR:
         codes = {1: 'Erase failed', 2: 'Read failed after erase',
@@ -468,9 +473,9 @@ def do_selftest(f, args):
                  6: 'Data mismatch'}
         code = r[1]
         msg = codes.get(code, f'Unknown error 0x{code:02X}')
-        if code == 6 and len(r) >= 4:
-            fail_off = (r[2] << 8) | r[3]
-            msg += f' at offset 0x{fail_off:04X}'
+        if code == 6 and len(r) >= 5:
+            fail_off = (r[2] << 16) | (r[3] << 8) | r[4]
+            msg += f' at offset 0x{fail_off:06X}'
         print(f'SELF-TEST FAILED: {msg}')
         return False
     else:
@@ -501,6 +506,8 @@ def main():
     p.add_argument('-p', '--port', help='Serial port (auto-detect)')
     p.add_argument('-a', '--addr', default='0', help='Start address (hex ok)')
     p.add_argument('-s', '--size', default=None, help='Size in bytes (hex ok)')
+    p.add_argument('-b', '--blocks', default=None,
+                   help='Number of 64KB blocks for selftest (default 2)')
     p.add_argument('--no-verify', action='store_true',
                    help='Skip verify after program')
     args = p.parse_args()

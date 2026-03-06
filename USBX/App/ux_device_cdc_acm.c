@@ -253,28 +253,39 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
     break;
 
   case CMD_SELF_TEST: {
-    /* Internal SPI test — no CDC data involved */
-    /* Uses sector at 0x1FF000 (last 4K of 2MB, safe area) */
-    dbg("SELF_TEST start\r\n", 17);
-    uint32_t test_addr = 0x1FF000;
+    /* Internal SPI test — no CDC data involved
+       CMD_SELF_TEST [NUM_BLOCKS] — default 1 block (64KB) */
+    uint8_t num_blocks = (len >= 2 && cmd[1] > 0) ? cmd[1] : 1;
+    uint32_t test_base =
+        0x1000000 - (uint32_t)num_blocks * 0x10000; /* end of 16MB */
+    uint32_t total_pages = (uint32_t)num_blocks * 256;
     uint8_t pattern[256];
     uint8_t readback[256];
-    uint16_t pass = 0;
-    uint16_t fail_at = 0xFFFF;
+    uint32_t pass = 0;
+    uint32_t fail_at = 0xFFFFFFFF;
+    char dbgbuf[48];
+    int n;
 
-    /* 1. Erase sector */
-    st = W25Q_EraseSector(&hw25q, test_addr);
-    if (st != W25Q_OK) {
-      dbg("ERASE FAIL\r\n", 11);
-      txbuf[0] = ACK_ERR;
-      txbuf[1] = 0x01;
-      tx_len = 2;
-      break;
+    n = snprintf(dbgbuf, sizeof(dbgbuf), "SELFTEST %uBLK @%06lX\r\n",
+                 num_blocks, (unsigned long)test_base);
+    dbg(dbgbuf, (uint16_t)n);
+
+    /* 1. Erase blocks */
+    for (int b = 0; b < num_blocks; b++) {
+      st = W25Q_EraseBlock64(&hw25q, test_base + b * 0x10000);
+      if (st != W25Q_OK) {
+        txbuf[0] = ACK_ERR;
+        txbuf[1] = 0x01;
+        tx_len = 2;
+        break;
+      }
     }
+    if (tx_len > 0)
+      break;
     dbg("erase ok\r\n", 10);
 
-    /* 2. Verify erased (first 256 bytes) */
-    st = W25Q_Read(&hw25q, test_addr, readback, 256);
+    /* 2. Verify first page erased */
+    st = W25Q_Read(&hw25q, test_base, readback, 256);
     if (st != W25Q_OK) {
       txbuf[0] = ACK_ERR;
       txbuf[1] = 0x02;
@@ -283,7 +294,6 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
     }
     for (int i = 0; i < 256; i++) {
       if (readback[i] != 0xFF) {
-        dbg("ERASE VFY FAIL\r\n", 16);
         txbuf[0] = ACK_ERR;
         txbuf[1] = 0x03;
         tx_len = 2;
@@ -291,16 +301,14 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
       }
     }
     if (tx_len > 0)
-      break; /* error already set */
-    dbg("erase vfy ok\r\n", 14);
+      break;
 
-    /* 3. Write test pattern (4 pages of 256 bytes) */
-    for (int pg = 0; pg < 4; pg++) {
+    /* 3. Write test pattern */
+    for (uint32_t pg = 0; pg < total_pages; pg++) {
       for (int i = 0; i < 256; i++)
         pattern[i] = (uint8_t)((pg * 256 + i) & 0xFF);
-      st = W25Q_PageProgram(&hw25q, test_addr + pg * 256, pattern, 256);
+      st = W25Q_PageProgram(&hw25q, test_base + pg * 256, pattern, 256);
       if (st != W25Q_OK) {
-        dbg("PROG FAIL\r\n", 11);
         txbuf[0] = ACK_ERR;
         txbuf[1] = 0x04;
         tx_len = 2;
@@ -311,9 +319,9 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
       break;
     dbg("prog ok\r\n", 9);
 
-    /* 4. Verify written data */
-    for (int pg = 0; pg < 4; pg++) {
-      st = W25Q_Read(&hw25q, test_addr + pg * 256, readback, 256);
+    /* 4. Verify all */
+    for (uint32_t pg = 0; pg < total_pages; pg++) {
+      st = W25Q_Read(&hw25q, test_base + pg * 256, readback, 256);
       if (st != W25Q_OK) {
         txbuf[0] = ACK_ERR;
         txbuf[1] = 0x05;
@@ -325,7 +333,7 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
         if (readback[i] == expected) {
           pass++;
         } else {
-          if (fail_at == 0xFFFF)
+          if (fail_at == 0xFFFFFFFF)
             fail_at = pg * 256 + i;
         }
       }
@@ -333,19 +341,23 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
     if (tx_len > 0)
       break;
 
-    if (fail_at == 0xFFFF) {
-      dbg("SELF_TEST PASS\r\n", 16);
+    if (fail_at == 0xFFFFFFFF) {
+      n = snprintf(dbgbuf, sizeof(dbgbuf), "PASS %lu/%lu\r\n",
+                   (unsigned long)pass, (unsigned long)total_pages * 256);
+      dbg(dbgbuf, (uint16_t)n);
       txbuf[0] = ACK_OK;
-      txbuf[1] = (pass >> 8) & 0xFF;
-      txbuf[2] = pass & 0xFF;
-      tx_len = 3;
+      txbuf[1] = (pass >> 24) & 0xFF;
+      txbuf[2] = (pass >> 16) & 0xFF;
+      txbuf[3] = (pass >> 8) & 0xFF;
+      txbuf[4] = pass & 0xFF;
+      tx_len = 5;
     } else {
-      dbg("SELF_TEST FAIL\r\n", 16);
       txbuf[0] = ACK_ERR;
       txbuf[1] = 0x06;
-      txbuf[2] = (fail_at >> 8) & 0xFF;
-      txbuf[3] = fail_at & 0xFF;
-      tx_len = 4;
+      txbuf[2] = (fail_at >> 16) & 0xFF;
+      txbuf[3] = (fail_at >> 8) & 0xFF;
+      txbuf[4] = fail_at & 0xFF;
+      tx_len = 5;
     }
     break;
   }
@@ -374,7 +386,7 @@ static uint32_t expected_cmd_len(const uint8_t *buf, uint32_t have) {
   case CMD_ERASE_64K:
     return 4;
   case CMD_SELF_TEST:
-    return 1;
+    return 2; /* cmd + num_blocks */
   case CMD_READ:
     return 6;
   case CMD_PAGE_PROG:
@@ -399,18 +411,7 @@ void usbx_cdc_acm_read_write_run(void) {
 
   UINT status;
 
-  /* --- TX: send response if pending --- */
-  if (tx_state == 1 && tx_len > 0) {
-    ULONG actual = 0;
-    status = ux_device_class_cdc_acm_write_run(cdc_acm, txbuf, tx_len, &actual);
-    if (status == UX_STATE_NEXT || status < UX_STATE_NEXT) {
-      tx_state = 0;
-      tx_len = 0;
-    }
-    return;
-  }
-
-  /* --- RX: accumulate USB packets into cmdbuf --- */
+  /* --- ALWAYS accumulate RX data (don't skip during TX!) --- */
   ULONG actual = 0;
   status =
       ux_device_class_cdc_acm_read_run(cdc_acm, rxbuf, sizeof(rxbuf), &actual);
@@ -419,12 +420,25 @@ void usbx_cdc_acm_read_write_run(void) {
     uint32_t copy = (actual < space) ? (uint32_t)actual : space;
     memcpy(&cmdbuf[cmd_pos], rxbuf, copy);
     cmd_pos += copy;
+  }
 
-    /* Check if we have a complete command */
+  /* --- TX: send response if pending --- */
+  if (tx_state == 1 && tx_len > 0) {
+    ULONG tx_actual = 0;
+    status =
+        ux_device_class_cdc_acm_write_run(cdc_acm, txbuf, tx_len, &tx_actual);
+    if (status == UX_STATE_NEXT || status < UX_STATE_NEXT) {
+      tx_state = 0;
+      tx_len = 0;
+    }
+    return; /* TX still in progress or just finished, come back next loop */
+  }
+
+  /* --- Process command if complete and TX idle --- */
+  if (cmd_pos > 0) {
     uint32_t needed = expected_cmd_len(cmdbuf, cmd_pos);
     if (needed > 0 && cmd_pos >= needed) {
       process_cmd(cmdbuf, needed);
-      /* Keep leftover bytes that belong to the next command */
       uint32_t leftover = cmd_pos - needed;
       if (leftover > 0) {
         memmove(cmdbuf, cmdbuf + needed, leftover);
