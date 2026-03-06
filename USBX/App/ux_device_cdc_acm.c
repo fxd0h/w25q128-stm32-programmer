@@ -120,9 +120,10 @@ extern W25Q_HandleTypeDef hw25q;
 #define CMD_PAGE_PROG 0x04  /* ADDR[3] LEN DATA[LEN] → ACK */
 #define CMD_CHIP_ERASE 0x05 /* → ACK */
 #define CMD_ERASE_64K 0x06  /* ADDR[3] → ACK */
-#define CMD_SELF_TEST 0x10 /* → ACK + result (internal SPI test, no CDC data) \
-                            */
-#define CMD_PING 0xFF      /* → "OK" */
+#define CMD_SELF_TEST                                                          \
+  0x10                /* → ACK + result (internal SPI test, no CDC data)     \
+                       */
+#define CMD_PING 0xFF /* → "OK" */
 
 #define ACK_OK 0x06
 #define ACK_ERR 0x15
@@ -422,8 +423,13 @@ void usbx_cdc_acm_read_write_run(void) {
     /* Check if we have a complete command */
     uint32_t needed = expected_cmd_len(cmdbuf, cmd_pos);
     if (needed > 0 && cmd_pos >= needed) {
-      process_cmd(cmdbuf, cmd_pos);
-      cmd_pos = 0;
+      process_cmd(cmdbuf, needed);
+      /* Keep leftover bytes that belong to the next command */
+      uint32_t leftover = cmd_pos - needed;
+      if (leftover > 0) {
+        memmove(cmdbuf, cmdbuf + needed, leftover);
+      }
+      cmd_pos = leftover;
       if (tx_len > 0) {
         tx_state = 1;
       }
