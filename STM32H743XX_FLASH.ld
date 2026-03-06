@@ -241,6 +241,15 @@ SECTIONS
     . = ALIGN(8);
   } >DTCMRAM
 
+  /* USB DMA accessible memory - must be in AHB-accessible RAM */
+  .RAM_D2 (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.RAM_D2)
+    *(.RAM_D2.*)
+    . = ALIGN(4);
+  } >RAM_D2
+
 
 
   /* Remove information from the standard libraries */

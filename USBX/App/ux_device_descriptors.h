@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    ux_device_descriptors.h
-  * @author  MCD Application Team
-  * @brief   USBX Device descriptor header file
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    ux_device_descriptors.h
+ * @author  MCD Application Team
+ * @brief   USBX Device descriptor header file
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __UX_DEVICE_DESCRIPTORS_H__
@@ -31,8 +31,9 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "ux_api.h"
-#include "ux_stm32_config.h"
 #include "ux_device_class_cdc_acm.h"
+#include "ux_stm32_config.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -40,44 +41,42 @@ extern "C" {
 /* USER CODE END Includes */
 
 /* Private defines -----------------------------------------------------------*/
-#define USBD_MAX_NUM_CONFIGURATION                     1U
-#define USBD_MAX_SUPPORTED_CLASS                       3U
-#define USBD_MAX_CLASS_ENDPOINTS                       9U
-#define USBD_MAX_CLASS_INTERFACES                      12U
+#define USBD_MAX_NUM_CONFIGURATION 1U
+#define USBD_MAX_SUPPORTED_CLASS 3U
+#define USBD_MAX_CLASS_ENDPOINTS 9U
+#define USBD_MAX_CLASS_INTERFACES 12U
 
-#define USBD_CDC_ACM_CLASS_ACTIVATED                   1U
+#define USBD_CDC_ACM_CLASS_ACTIVATED 1U
 
-#define USBD_CONFIG_MAXPOWER                           25U
-#define USBD_COMPOSITE_USE_IAD                         1U
-#define USBD_DEVICE_FRAMEWORK_BUILDER_ENABLED          1U
+#define USBD_CONFIG_MAXPOWER 25U
+#define USBD_COMPOSITE_USE_IAD 1U
+#define USBD_DEVICE_FRAMEWORK_BUILDER_ENABLED 1U
 
-#define USBD_FRAMEWORK_MAX_DESC_SZ                     200U
+#define USBD_FRAMEWORK_MAX_DESC_SZ 200U
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
 /* USER CODE END ET */
 
 /* Enum Class Type */
-typedef enum
-{
-  CLASS_TYPE_NONE     = 0,
-  CLASS_TYPE_HID      = 1,
-  CLASS_TYPE_CDC_ACM  = 2,
-  CLASS_TYPE_MSC      = 3,
-  CLASS_TYPE_CDC_ECM  = 4,
-  CLASS_TYPE_DFU      = 5,
-  CLASS_TYPE_VIDEO    = 6,
+typedef enum {
+  CLASS_TYPE_NONE = 0,
+  CLASS_TYPE_HID = 1,
+  CLASS_TYPE_CDC_ACM = 2,
+  CLASS_TYPE_MSC = 3,
+  CLASS_TYPE_CDC_ECM = 4,
+  CLASS_TYPE_DFU = 5,
+  CLASS_TYPE_VIDEO = 6,
   CLASS_TYPE_PIMA_MTP = 7,
-  CLASS_TYPE_CCID     = 8,
-  CLASS_TYPE_PRINTER  = 9,
-  CLASS_TYPE_RNDIS    = 10,
+  CLASS_TYPE_CCID = 8,
+  CLASS_TYPE_PRINTER = 9,
+  CLASS_TYPE_RNDIS = 10,
   CLASS_TYPE_AUDIO_10 = 11,
   CLASS_TYPE_AUDIO_20 = 12,
 } USBD_CompositeClassTypeDef;
 
 /* USB Endpoint handle structure */
-typedef struct
-{
+typedef struct {
   uint32_t status;
   uint32_t total_length;
   uint32_t rem_length;
@@ -87,8 +86,7 @@ typedef struct
 } USBD_EndpointTypeDef;
 
 /* USB endpoint handle structure */
-typedef struct
-{
+typedef struct {
   uint8_t add;
   uint8_t type;
   uint16_t size;
@@ -96,8 +94,7 @@ typedef struct
 } USBD_EPTypeDef;
 
 /* USB Composite handle structure */
-typedef struct
-{
+typedef struct {
   USBD_CompositeClassTypeDef ClassType;
   uint32_t ClassId;
   uint8_t InterfaceType;
@@ -109,8 +106,7 @@ typedef struct
 } USBD_CompositeElementTypeDef;
 
 /* USB Device handle structure */
-typedef struct _USBD_DevClassHandleTypeDef
-{
+typedef struct _USBD_DevClassHandleTypeDef {
   uint8_t Speed;
   uint32_t classId;
   uint32_t NumClasses;
@@ -120,15 +116,13 @@ typedef struct _USBD_DevClassHandleTypeDef
 } USBD_DevClassHandleTypeDef;
 
 /* USB Device endpoint direction */
-typedef enum
-{
-  OUT   = 0x00,
-  IN    = 0x80,
+typedef enum {
+  OUT = 0x00,
+  IN = 0x80,
 } USBD_EPDirectionTypeDef;
 
 /* USB Device descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint16_t bcdUSB;
@@ -146,8 +140,7 @@ typedef struct
 } __PACKED USBD_DeviceDescTypedef;
 
 /* USB Iad descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint8_t bFirstInterface;
@@ -159,8 +152,7 @@ typedef struct
 } __PACKED USBD_IadDescTypedef;
 
 /* USB interface descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint8_t bInterfaceNumber;
@@ -173,8 +165,7 @@ typedef struct
 } __PACKED USBD_IfDescTypedef;
 
 /* USB endpoint descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint8_t bEndpointAddress;
@@ -184,8 +175,7 @@ typedef struct
 } __PACKED USBD_EpDescTypedef;
 
 /* USB Config descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint16_t wDescriptorLength;
@@ -197,8 +187,7 @@ typedef struct
 } __PACKED USBD_ConfigDescTypedef;
 
 /* USB Qualifier descriptors structure */
-typedef struct
-{
+typedef struct {
   uint8_t bLength;
   uint8_t bDescriptorType;
   uint16_t bcdDevice;
@@ -210,9 +199,9 @@ typedef struct
   uint8_t bReserved;
 } __PACKED USBD_DevQualiDescTypedef;
 
-#if (USBD_CDC_ACM_CLASS_ACTIVATED == 1) || (USBD_RNDIS_CLASS_ACTIVATED == 1) || (USBD_CDC_ECM_CLASS_ACTIVATED == 1)
-typedef struct
-{
+#if (USBD_CDC_ACM_CLASS_ACTIVATED == 1) ||                                     \
+    (USBD_RNDIS_CLASS_ACTIVATED == 1) || (USBD_CDC_ECM_CLASS_ACTIVATED == 1)
+typedef struct {
   /* Header Functional Descriptor*/
   uint8_t bLength;
   uint8_t bDescriptorType;
@@ -220,8 +209,7 @@ typedef struct
   uint16_t bcdCDC;
 } __PACKED USBD_CDCHeaderFuncDescTypedef;
 
-typedef struct
-{
+typedef struct {
   /* Call Management Functional Descriptor*/
   uint8_t bLength;
   uint8_t bDescriptorType;
@@ -230,8 +218,7 @@ typedef struct
   uint8_t bDataInterface;
 } __PACKED USBD_CDCCallMgmFuncDescTypedef;
 
-typedef struct
-{
+typedef struct {
   /* ACM Functional Descriptor*/
   uint8_t bLength;
   uint8_t bDescriptorType;
@@ -239,8 +226,7 @@ typedef struct
   uint8_t bmCapabilities;
 } __PACKED USBD_CDCACMFuncDescTypedef;
 
-typedef struct
-{
+typedef struct {
   /* Union Functional Descriptor*/
   uint8_t bLength;
   uint8_t bDescriptorType;
@@ -249,7 +235,8 @@ typedef struct
   uint8_t bSlaveInterface;
 } __PACKED USBD_CDCUnionFuncDescTypedef;
 
-#endif /* (USBD_CDC_ACM_CLASS_ACTIVATED == 1) || (USBD_RNDIS_CLASS_ACTIVATED == 1)  || (USBD_CDC_ECM_CLASS_ACTIVATED == 1)*/
+#endif /* (USBD_CDC_ACM_CLASS_ACTIVATED == 1) || (USBD_RNDIS_CLASS_ACTIVATED   \
+          == 1)  || (USBD_CDC_ECM_CLASS_ACTIVATED == 1)*/
 
 /* Exported functions prototypes ---------------------------------------------*/
 /* USER CODE BEGIN EFP */
@@ -260,103 +247,104 @@ uint8_t *USBD_Get_Device_Framework_Speed(uint8_t Speed, ULONG *Length);
 uint8_t *USBD_Get_String_Framework(ULONG *Length);
 uint8_t *USBD_Get_Language_Id_Framework(ULONG *Length);
 uint16_t USBD_Get_Interface_Number(uint8_t class_type, uint8_t interface_type);
-uint16_t USBD_Get_Configuration_Number(uint8_t class_type, uint8_t interface_type);
+uint16_t USBD_Get_Configuration_Number(uint8_t class_type,
+                                       uint8_t interface_type);
 
 /* Private defines -----------------------------------------------------------*/
 /* USER CODE BEGIN Private_defines */
 
 /* USER CODE END Private_defines */
 
-#define USBD_VID                                      1155
-#define USBD_PID                                      22288
-#define USBD_LANGID_STRING                            1033
-#define USBD_MANUFACTURER_STRING                      "STMicroelectronics"
-#define USBD_PRODUCT_STRING                           "STM32 USB Device"
-#define USBD_SERIAL_NUMBER                            "000000000001"
+#define USBD_VID 1155
+#define USBD_PID 22288
+#define USBD_LANGID_STRING 1033
+#define USBD_MANUFACTURER_STRING "STMicroelectronics"
+#define USBD_PRODUCT_STRING "STM32 USB Device"
+#define USBD_SERIAL_NUMBER "000000000001"
 
-#define USB_DESC_TYPE_INTERFACE                       0x04U
-#define USB_DESC_TYPE_ENDPOINT                        0x05U
-#define USB_DESC_TYPE_CONFIGURATION                   0x02U
-#define USB_DESC_TYPE_IAD                             0x0BU
+#define USB_DESC_TYPE_INTERFACE 0x04U
+#define USB_DESC_TYPE_ENDPOINT 0x05U
+#define USB_DESC_TYPE_CONFIGURATION 0x02U
+#define USB_DESC_TYPE_IAD 0x0BU
 
-#define USBD_EP_TYPE_CTRL                             0x00U
-#define USBD_EP_TYPE_ISOC                             0x01U
-#define USBD_EP_TYPE_BULK                             0x02U
-#define USBD_EP_TYPE_INTR                             0x03U
+#define USBD_EP_TYPE_CTRL 0x00U
+#define USBD_EP_TYPE_ISOC 0x01U
+#define USBD_EP_TYPE_BULK 0x02U
+#define USBD_EP_TYPE_INTR 0x03U
 
-#define USBD_FULL_SPEED                               0x00U
-#define USBD_HIGH_SPEED                               0x01U
+#define USBD_FULL_SPEED 0x00U
+#define USBD_HIGH_SPEED 0x01U
 
-#define USB_BCDUSB                                    0x0200U
-#define LANGUAGE_ID_MAX_LENGTH                        2U
+#define USB_BCDUSB 0x0200U
+#define LANGUAGE_ID_MAX_LENGTH 2U
 
-#define USBD_IDX_MFC_STR                              0x01U
-#define USBD_IDX_PRODUCT_STR                          0x02U
-#define USBD_IDX_SERIAL_STR                           0x03U
+#define USBD_IDX_MFC_STR 0x01U
+#define USBD_IDX_PRODUCT_STR 0x02U
+#define USBD_IDX_SERIAL_STR 0x03U
 
-#define USBD_MAX_EP0_SIZE                             64U
-#define USBD_DEVICE_QUALIFIER_DESC_SIZE               0x0AU
+#define USBD_MAX_EP0_SIZE 64U
+#define USBD_DEVICE_QUALIFIER_DESC_SIZE 0x0AU
 
-#define USBD_STRING_FRAMEWORK_MAX_LENGTH              256U
+#define USBD_STRING_FRAMEWORK_MAX_LENGTH 256U
 
 /* Device CDC-ACM Class */
-#define USBD_CDCACM_EPINCMD_ADDR                      0x81U
-#define USBD_CDCACM_EPINCMD_FS_MPS                    8U
-#define USBD_CDCACM_EPINCMD_HS_MPS                    8U
-#define USBD_CDCACM_EPIN_ADDR                         0x81U
-#define USBD_CDCACM_EPOUT_ADDR                        0x01U
-#define USBD_CDCACM_EPIN_FS_MPS                       64U
-#define USBD_CDCACM_EPIN_HS_MPS                       512U
-#define USBD_CDCACM_EPOUT_FS_MPS                      64U
-#define USBD_CDCACM_EPOUT_HS_MPS                      512U
-#define USBD_CDCACM_EPINCMD_FS_BINTERVAL              5U
-#define USBD_CDCACM_EPINCMD_HS_BINTERVAL              5U
+#define USBD_CDCACM_EPINCMD_ADDR 0x82U
+#define USBD_CDCACM_EPINCMD_FS_MPS 8U
+#define USBD_CDCACM_EPINCMD_HS_MPS 8U
+#define USBD_CDCACM_EPIN_ADDR 0x81U
+#define USBD_CDCACM_EPOUT_ADDR 0x01U
+#define USBD_CDCACM_EPIN_FS_MPS 64U
+#define USBD_CDCACM_EPIN_HS_MPS 512U
+#define USBD_CDCACM_EPOUT_FS_MPS 64U
+#define USBD_CDCACM_EPOUT_HS_MPS 512U
+#define USBD_CDCACM_EPINCMD_FS_BINTERVAL 5U
+#define USBD_CDCACM_EPINCMD_HS_BINTERVAL 5U
 
 #ifndef USBD_CONFIG_STR_DESC_IDX
-#define USBD_CONFIG_STR_DESC_IDX                      0U
+#define USBD_CONFIG_STR_DESC_IDX 0U
 #endif /* USBD_CONFIG_STR_DESC_IDX */
 
 #ifndef USBD_CONFIG_BMATTRIBUTES
-#define USBD_CONFIG_BMATTRIBUTES                      0xC0U
+#define USBD_CONFIG_BMATTRIBUTES 0xC0U
 #endif /* USBD_CONFIG_BMATTRIBUTES */
 
 /* Private macro -----------------------------------------------------------*/
 /* USER CODE BEGIN Private_macro */
 
 /* USER CODE END Private_macro */
-#define __USBD_FRAMEWORK_SET_EP(epadd, eptype, epsize, HSinterval, FSinterval) do { \
-                                /* Append Endpoint descriptor to Configuration descriptor */ \
-                                pEpDesc = ((USBD_EpDescTypedef*)((uint32_t)pConf + *Sze)); \
-                                pEpDesc->bLength            = (uint8_t)sizeof(USBD_EpDescTypedef); \
-                                pEpDesc->bDescriptorType    = USB_DESC_TYPE_ENDPOINT; \
-                                pEpDesc->bEndpointAddress   = (epadd); \
-                                pEpDesc->bmAttributes       = (eptype); \
-                                pEpDesc->wMaxPacketSize     = (epsize); \
-                                if(pdev->Speed == USBD_HIGH_SPEED) \
-                                { \
-                                  pEpDesc->bInterval        = (HSinterval); \
-                                } \
-                                else \
-                                { \
-                                  pEpDesc->bInterval        = (FSinterval); \
-                                } \
-                                *Sze += (uint32_t)sizeof(USBD_EpDescTypedef); \
-                              } while(0)
+#define __USBD_FRAMEWORK_SET_EP(epadd, eptype, epsize, HSinterval, FSinterval) \
+  do {                                                                         \
+    /* Append Endpoint descriptor to Configuration descriptor */               \
+    pEpDesc = ((USBD_EpDescTypedef *)((uint32_t)pConf + *Sze));                \
+    pEpDesc->bLength = (uint8_t)sizeof(USBD_EpDescTypedef);                    \
+    pEpDesc->bDescriptorType = USB_DESC_TYPE_ENDPOINT;                         \
+    pEpDesc->bEndpointAddress = (epadd);                                       \
+    pEpDesc->bmAttributes = (eptype);                                          \
+    pEpDesc->wMaxPacketSize = (epsize);                                        \
+    if (pdev->Speed == USBD_HIGH_SPEED) {                                      \
+      pEpDesc->bInterval = (HSinterval);                                       \
+    } else {                                                                   \
+      pEpDesc->bInterval = (FSinterval);                                       \
+    }                                                                          \
+    *Sze += (uint32_t)sizeof(USBD_EpDescTypedef);                              \
+  } while (0)
 
-#define __USBD_FRAMEWORK_SET_IF(ifnum, alt, eps, class, subclass, protocol, istring) do {\
-                                /* Interface Descriptor */ \
-                                pIfDesc = ((USBD_IfDescTypedef*)((uint32_t)pConf + *Sze)); \
-                                pIfDesc->bLength = (uint8_t)sizeof(USBD_IfDescTypedef); \
-                                pIfDesc->bDescriptorType = USB_DESC_TYPE_INTERFACE; \
-                                pIfDesc->bInterfaceNumber = (ifnum); \
-                                pIfDesc->bAlternateSetting = (alt); \
-                                pIfDesc->bNumEndpoints = (eps); \
-                                pIfDesc->bInterfaceClass = (class); \
-                                pIfDesc->bInterfaceSubClass = (subclass); \
-                                pIfDesc->bInterfaceProtocol = (protocol); \
-                                pIfDesc->iInterface = (istring); \
-                                *Sze += (uint32_t)sizeof(USBD_IfDescTypedef); \
-                              } while(0)
+#define __USBD_FRAMEWORK_SET_IF(ifnum, alt, eps, class, subclass, protocol,    \
+                                istring)                                       \
+  do {                                                                         \
+    /* Interface Descriptor */                                                 \
+    pIfDesc = ((USBD_IfDescTypedef *)((uint32_t)pConf + *Sze));                \
+    pIfDesc->bLength = (uint8_t)sizeof(USBD_IfDescTypedef);                    \
+    pIfDesc->bDescriptorType = USB_DESC_TYPE_INTERFACE;                        \
+    pIfDesc->bInterfaceNumber = (ifnum);                                       \
+    pIfDesc->bAlternateSetting = (alt);                                        \
+    pIfDesc->bNumEndpoints = (eps);                                            \
+    pIfDesc->bInterfaceClass = (class);                                        \
+    pIfDesc->bInterfaceSubClass = (subclass);                                  \
+    pIfDesc->bInterfaceProtocol = (protocol);                                  \
+    pIfDesc->iInterface = (istring);                                           \
+    *Sze += (uint32_t)sizeof(USBD_IfDescTypedef);                              \
+  } while (0)
 
 /* USER CODE BEGIN 2 */
 
@@ -365,4 +353,4 @@ uint16_t USBD_Get_Configuration_Number(uint8_t class_type, uint8_t interface_typ
 #ifdef __cplusplus
 }
 #endif
-#endif  /* __UX_DEVICE_DESCRIPTORS_H__ */
+#endif /* __UX_DEVICE_DESCRIPTORS_H__ */
