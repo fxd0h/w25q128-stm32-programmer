@@ -120,7 +120,9 @@ extern W25Q_HandleTypeDef hw25q;
 #define CMD_PAGE_PROG 0x04  /* ADDR[3] LEN DATA[LEN] → ACK */
 #define CMD_CHIP_ERASE 0x05 /* → ACK */
 #define CMD_ERASE_64K 0x06  /* ADDR[3] → ACK */
-#define CMD_PING 0xFF       /* → "OK" */
+#define CMD_SELF_TEST 0x10 /* → ACK + result (internal SPI test, no CDC data) \
+                            */
+#define CMD_PING 0xFF      /* → "OK" */
 
 #define ACK_OK 0x06
 #define ACK_ERR 0x15
@@ -249,6 +251,104 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
     dbg("CHIP_ERASE done\r\n", 17);
     break;
 
+  case CMD_SELF_TEST: {
+    /* Internal SPI test — no CDC data involved */
+    /* Uses sector at 0x1FF000 (last 4K of 2MB, safe area) */
+    dbg("SELF_TEST start\r\n", 17);
+    uint32_t test_addr = 0x1FF000;
+    uint8_t pattern[256];
+    uint8_t readback[256];
+    uint16_t pass = 0;
+    uint16_t fail_at = 0xFFFF;
+
+    /* 1. Erase sector */
+    st = W25Q_EraseSector(&hw25q, test_addr);
+    if (st != W25Q_OK) {
+      dbg("ERASE FAIL\r\n", 11);
+      txbuf[0] = ACK_ERR;
+      txbuf[1] = 0x01;
+      tx_len = 2;
+      break;
+    }
+    dbg("erase ok\r\n", 10);
+
+    /* 2. Verify erased (first 256 bytes) */
+    st = W25Q_Read(&hw25q, test_addr, readback, 256);
+    if (st != W25Q_OK) {
+      txbuf[0] = ACK_ERR;
+      txbuf[1] = 0x02;
+      tx_len = 2;
+      break;
+    }
+    for (int i = 0; i < 256; i++) {
+      if (readback[i] != 0xFF) {
+        dbg("ERASE VFY FAIL\r\n", 16);
+        txbuf[0] = ACK_ERR;
+        txbuf[1] = 0x03;
+        tx_len = 2;
+        break;
+      }
+    }
+    if (tx_len > 0)
+      break; /* error already set */
+    dbg("erase vfy ok\r\n", 14);
+
+    /* 3. Write test pattern (4 pages of 256 bytes) */
+    for (int pg = 0; pg < 4; pg++) {
+      for (int i = 0; i < 256; i++)
+        pattern[i] = (uint8_t)((pg * 256 + i) & 0xFF);
+      st = W25Q_PageProgram(&hw25q, test_addr + pg * 256, pattern, 256);
+      if (st != W25Q_OK) {
+        dbg("PROG FAIL\r\n", 11);
+        txbuf[0] = ACK_ERR;
+        txbuf[1] = 0x04;
+        tx_len = 2;
+        break;
+      }
+    }
+    if (tx_len > 0)
+      break;
+    dbg("prog ok\r\n", 9);
+
+    /* 4. Verify written data */
+    for (int pg = 0; pg < 4; pg++) {
+      st = W25Q_Read(&hw25q, test_addr + pg * 256, readback, 256);
+      if (st != W25Q_OK) {
+        txbuf[0] = ACK_ERR;
+        txbuf[1] = 0x05;
+        tx_len = 2;
+        break;
+      }
+      for (int i = 0; i < 256; i++) {
+        uint8_t expected = (uint8_t)((pg * 256 + i) & 0xFF);
+        if (readback[i] == expected) {
+          pass++;
+        } else {
+          if (fail_at == 0xFFFF)
+            fail_at = pg * 256 + i;
+        }
+      }
+    }
+    if (tx_len > 0)
+      break;
+
+    if (fail_at == 0xFFFF) {
+      dbg("SELF_TEST PASS\r\n", 16);
+      txbuf[0] = ACK_OK;
+      txbuf[1] = (pass >> 8) & 0xFF;
+      txbuf[2] = pass & 0xFF;
+      tx_len = 3;
+    } else {
+      dbg("SELF_TEST FAIL\r\n", 16);
+      txbuf[0] = ACK_ERR;
+      txbuf[1] = 0x06;
+      txbuf[2] = (fail_at >> 8) & 0xFF;
+      txbuf[3] = fail_at & 0xFF;
+      tx_len = 4;
+    }
+    break;
+  }
+
   default:
     txbuf[0] = ACK_ERR;
     tx_len = 1;
@@ -272,6 +372,8 @@ static uint32_t expected_cmd_len(const uint8_t *buf, uint32_t have) {
     return 4;
   case CMD_ERASE_64K:
     return 4;
+  case CMD_SELF_TEST:
+    return 1;
   case CMD_READ:
     return 6;
   case CMD_PAGE_PROG:

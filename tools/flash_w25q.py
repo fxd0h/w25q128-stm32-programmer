@@ -27,6 +27,7 @@ CMD_ERASE_4K   = 0x03  # ADDR[3] → ACK
 CMD_PAGE_PROG  = 0x04  # ADDR[3] LEN DATA[LEN] → ACK
 CMD_CHIP_ERASE = 0x05  # → ACK
 CMD_ERASE_64K  = 0x06  # ADDR[3] → ACK
+CMD_SELF_TEST  = 0x10  # → ACK + result (internal SPI test)
 CMD_PING       = 0xFF  # → "OK"
 
 ACK_OK  = 0x06
@@ -150,16 +151,28 @@ class W25QFlasher:
         return len(r) >= 1 and r[0] == ACK_OK
 
     def page_program(self, addr, data):
+        """Program up to 256 bytes. Uses careful timing for USB reliability."""
         assert len(data) <= PAGE_SIZE
-        # len=0 means 256 bytes in our protocol (uint8 wraps)
         plen = len(data) if len(data) < 256 else 0
-        cmd = bytes([CMD_PAGE_PROG,
-                     (addr >> 16) & 0xFF,
-                     (addr >> 8) & 0xFF,
-                     addr & 0xFF,
-                     plen]) + bytes(data)
-        r = self._cmd(cmd, 1, timeout=2)
+        header = bytes([CMD_PAGE_PROG,
+                        (addr >> 16) & 0xFF,
+                        (addr >> 8) & 0xFF,
+                        addr & 0xFF,
+                        plen])
+        # Send header + data as one write for USB coherence
+        self.ser.write(header + bytes(data))
+        self.ser.flush()
+        # Wait for ACK — firmware needs time to accumulate USB packets
+        # and execute SPI page program (~3ms at 1.5MHz + program time)
+        r = self.ser.read(1)
+        # Small settle delay for USB between consecutive page writes
+        time.sleep(0.003)
         return len(r) >= 1 and r[0] == ACK_OK
+
+    def self_test(self):
+        """Run internal SPI self-test on MCU (no CDC data involved)."""
+        r = self._cmd(bytes([CMD_SELF_TEST]), 4, timeout=10)
+        return r
 
 
 # ── Commands ──────────────────────────────────────────────
@@ -440,6 +453,31 @@ def do_test(f, args):
     return ok
 
 
+def do_selftest(f, args):
+    print('Running internal SPI self-test on MCU...')
+    print('(Erase + Write + Verify 1KB at 0x1FF000 — no CDC data transfer)')
+    r = f.self_test()
+    if len(r) >= 3 and r[0] == ACK_OK:
+        passed = (r[1] << 8) | r[2]
+        print(f'SELF-TEST PASSED: {passed}/1024 bytes verified')
+        return True
+    elif len(r) >= 2 and r[0] == ACK_ERR:
+        codes = {1: 'Erase failed', 2: 'Read failed after erase',
+                 3: 'Erase verify failed (not all 0xFF)',
+                 4: 'Page program failed', 5: 'Read failed after program',
+                 6: 'Data mismatch'}
+        code = r[1]
+        msg = codes.get(code, f'Unknown error 0x{code:02X}')
+        if code == 6 and len(r) >= 4:
+            fail_off = (r[2] << 8) | r[3]
+            msg += f' at offset 0x{fail_off:04X}'
+        print(f'SELF-TEST FAILED: {msg}')
+        return False
+    else:
+        print(f'SELF-TEST: no response (got {r.hex() if r else "nothing"})')
+        return False
+
+
 # ── Main ──────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser(
@@ -457,7 +495,7 @@ def main():
 ''')
     p.add_argument('command',
                    choices=['ping', 'id', 'read', 'program', 'verify',
-                            'erase', 'dump', 'test'],
+                            'erase', 'dump', 'test', 'selftest'],
                    help='Command')
     p.add_argument('file', nargs='?', help='File for read/program/verify')
     p.add_argument('-p', '--port', help='Serial port (auto-detect)')
@@ -492,7 +530,8 @@ def main():
         'erase':   do_erase,
         'program': do_program,
         'verify':  do_verify,
-        'test':    do_test,
+        'test':     do_test,
+        'selftest': do_selftest,
     }
 
     ok = cmds[args.command](f, args)
