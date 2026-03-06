@@ -109,7 +109,7 @@ int main(void) {
   MX_USB_OTG_FS_PCD_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  W25Q_Init(&hw25q, &hspi1, GPIOD, GPIO_PIN_14);
+  W25Q_Init(&hw25q, &hspi1, GPIOA, GPIO_PIN_10);
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -337,33 +337,31 @@ static void MX_GPIO_Init(void) {
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
-  /* PD14 = SPI CS for W25Q128 (active low, idle high) */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  /* W25Q128 power + control pins (all consecutive on CN12 left) */
+  /* PA2 = VCC (GPIO HIGH, ~15mA max) */
+  /* PA3 = /WP + /HOLD tied together (GPIO HIGH) */
+  /* PA10 = /CS (active low, idle high) */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_10, GPIO_PIN_SET);
+  GPIO_InitStruct.Pin = GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_10;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
 static void MX_SPI1_Init(void) {
-  /* SPI1: PA5=SCK, PA6=MISO (GPIOA AF5), PB5=MOSI (GPIOB AF5) */
+  /* SPI1 on GPIOB: PB3=SCK, PB4=MISO, PB5=MOSI (all AF5) */
   __HAL_RCC_SPI1_CLK_ENABLE();
-  /* GPIOA and GPIOB clocks already enabled by MX_GPIO_Init */
+  /* GPIOB clock already enabled by MX_GPIO_Init */
 
   GPIO_InitTypeDef gi = {0};
-  /* PA5 (SCK) + PA6 (MISO) */
-  gi.Pin = GPIO_PIN_5 | GPIO_PIN_6;
+  gi.Pin = GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5;
   gi.Mode = GPIO_MODE_AF_PP;
   gi.Pull = GPIO_NOPULL;
   gi.Speed = GPIO_SPEED_FREQ_HIGH;
   gi.Alternate = GPIO_AF5_SPI1;
-  HAL_GPIO_Init(GPIOA, &gi);
-
-  /* PB5 (MOSI) — separate port */
-  gi.Pin = GPIO_PIN_5;
   HAL_GPIO_Init(GPIOB, &gi);
 
   hspi1.Instance = SPI1;
