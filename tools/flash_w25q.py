@@ -163,11 +163,48 @@ class W25QFlasher:
         self.ser.write(header + bytes(data))
         self.ser.flush()
         # Wait for ACK — firmware needs time to accumulate USB packets
-        # and execute SPI page program (~3ms at 1.5MHz + program time)
+        # and execute SPI page program (~3ms at 750KHz + program time)
         r = self.ser.read(1)
         # Small settle delay for USB between consecutive page writes
         time.sleep(0.003)
         return len(r) >= 1 and r[0] == ACK_OK
+
+    def _resync(self):
+        """Re-synchronize CDC protocol after error."""
+        self.ser.reset_input_buffer()
+        self.ser.reset_output_buffer()
+        time.sleep(0.05)
+        self.ser.reset_input_buffer()
+        # Send ping to re-establish sync
+        for _ in range(3):
+            self.ser.write(bytes([CMD_PING]))
+            self.ser.flush()
+            time.sleep(0.05)
+            r = self.ser.read(2)
+            if r == b'OK':
+                return True
+            self.ser.reset_input_buffer()
+            time.sleep(0.1)
+        return False
+
+    def page_program_verified(self, addr, data, max_retries=3):
+        """Program page + verify readback. Retry on failure."""
+        for attempt in range(max_retries):
+            ok = self.page_program(addr, data)
+            if not ok:
+                print(f'\n  WARN: page_program NAK at 0x{addr:06X}, retrying...')
+                self._resync()
+                continue
+            # Read back and verify
+            rd = self.read(addr, len(data))
+            if rd is not None and rd[:len(data)] == data:
+                return True
+            # Mismatch — resync and retry
+            if attempt < max_retries - 1:
+                print(f'\n  WARN: verify fail at 0x{addr:06X} attempt {attempt+1}, resyncing...')
+                self._resync()
+                time.sleep(0.05)
+        return False
 
     def self_test(self, num_blocks=1):
         """Run internal SPI self-test on MCU (no CDC data involved)."""
@@ -323,29 +360,21 @@ def do_program(f, args):
         progress(min(erased, erase_size), erase_size, 'Erasing', t0)
     print(f'  Erase: {time.time()-t0:.1f}s')
 
-    # 2. Program
-    print(f'Step 2/3: Programming {human_size(fsize)}...')
+    # 2. Program (with per-page verify)
+    print(f'Step 2/2: Programming + verifying {human_size(fsize)}...')
     t0 = time.time()
     offset = 0
+    retries_total = 0
     while offset < fsize:
         plen = min(PAGE_SIZE, fsize - offset)
         page = data[offset:offset+plen]
-        ok = f.page_program(addr + offset, page)
+        ok = f.page_program_verified(addr + offset, page)
         if not ok:
-            print(f'\nPROGRAM FAILED at 0x{addr+offset:06X}')
+            print(f'\nPROGRAM FAILED at 0x{addr+offset:06X} (after retries)')
             return False
         offset += plen
-        progress(offset, fsize, 'Writing', t0)
-    print(f'  Program: {time.time()-t0:.1f}s')
-
-    # 3. Verify
-    if not args.no_verify:
-        print(f'Step 3/3: Verifying...')
-        ok = _verify(f, data, addr, fsize)
-        if not ok:
-            return False
-    else:
-        print('Verification skipped.')
+        progress(offset, fsize, 'Write+Verify', t0)
+    print(f'  Program+Verify: {time.time()-t0:.1f}s')
 
     print('*** PROGRAMMING COMPLETE ***')
     return True
