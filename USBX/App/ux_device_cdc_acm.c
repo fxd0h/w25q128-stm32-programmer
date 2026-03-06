@@ -112,7 +112,8 @@ extern UART_HandleTypeDef hcom_uart[];
 
 static uint32_t tx_tick = 0;
 static uint32_t tx_state = 0; /* 0=idle, 1=writing */
-static uint8_t tx_msg[] __attribute__((section(".RAM_D2"))) = "HELLO\r\n";
+static uint8_t tx_msg[8] __attribute__((section(".RAM_D2")));
+static int tx_msg_init = 0;
 static uint32_t write_wait_count = 0;
 static uint32_t write_next_count = 0;
 static uint32_t write_error_count = 0;
@@ -125,6 +126,12 @@ static void dbg(const char *s, uint16_t len) {
 }
 
 void usbx_cdc_acm_read_write_run(void) {
+  /* One-time init: .RAM_D2 is not initialized by startup code */
+  if (!tx_msg_init) {
+    memcpy(tx_msg, "HELLO\r\n", 7);
+    tx_msg[7] = 0;
+    tx_msg_init = 1;
+  }
   /* Short debug every 5s */
   if (HAL_GetTick() - dbg_tick >= 5000) {
     dbg_tick = HAL_GetTick();

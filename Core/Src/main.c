@@ -292,7 +292,15 @@ static void MX_USB_OTG_FS_PCD_Init(void) {
     Error_Handler();
   }
   /* USER CODE BEGIN USB_OTG_FS_PCD_Init 2 */
-
+  /* Configure USB OTG FS FIFO sizes (in 32-bit words).
+   * Total available: 320 words (1.25 KB) for FS OTG.
+   * RxFIFO is shared; each IN EP gets its own TxFIFO. */
+  HAL_PCDEx_SetRxFiFo(&hpcd_USB_OTG_FS, 128);   /* 512 bytes shared Rx */
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 0, 32); /* EP0 IN: 128 bytes */
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 1,
+                      64); /* EP1 IN: 256 bytes (bulk data) */
+  HAL_PCDEx_SetTxFiFo(&hpcd_USB_OTG_FS, 2,
+                      16); /* EP2 IN: 64 bytes (notification) */
   /* USER CODE END USB_OTG_FS_PCD_Init 2 */
 }
 

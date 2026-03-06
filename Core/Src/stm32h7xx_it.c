@@ -215,6 +215,18 @@ void TIM8_BRK_TIM12_IRQHandler(void) {
 /* USER CODE BEGIN 1 */
 /**
  * @brief This function handles USB OTG FS global interrupt.
+ *
+ * WORKAROUND: HAL_PCD_IRQHandler enables DOEPMSK.NAKM during USB reset
+ * handling (line 1363 of stm32h7xx_hal_pcd.c). This causes phantom NAK
+ * interrupts: DAINTSTS shows EP OUT pending, but DOEPINT is 0 (already
+ * auto-cleared). Result: infinite ISR re-entry, CPU stuck in ISR.
+ * Fix: clear NAKM after each IRQ handler call.
  */
-void OTG_FS_IRQHandler(void) { HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS); }
+void OTG_FS_IRQHandler(void) {
+  HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
+  /* Clear the NAK interrupt mask to prevent phantom NAK IRQ storm.
+   * DOEPMSK is at USB_OTG_FS_BASE + USB_OTG_DEVICE_BASE (0x800) + 0x14 */
+  *(__IO uint32_t *)((uint32_t)USB_OTG_FS + 0x800U + 0x14U) &=
+      ~USB_OTG_DOEPMSK_NAKM;
+}
 /* USER CODE END 1 */
