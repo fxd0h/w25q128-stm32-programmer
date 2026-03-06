@@ -219,14 +219,14 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
   }
 
   case CMD_PAGE_PROG: {
-    /* CMD_PAGE_PROG ADDR[3] LEN DATA[LEN] */
+    /* CMD_PAGE_PROG ADDR[3] LEN DATA[LEN] (LEN=0 means 256) */
     if (len < 5) {
       txbuf[0] = ACK_ERR;
       tx_len = 1;
       break;
     }
     uint32_t addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
-    uint8_t plen = cmd[4];
+    uint16_t plen = cmd[4] ? cmd[4] : 256;
     if (len < (uint32_t)(5 + plen)) {
       txbuf[0] = ACK_ERR;
       tx_len = 1;
