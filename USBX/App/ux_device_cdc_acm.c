@@ -126,10 +126,13 @@ extern W25Q_HandleTypeDef hw25q;
 #define ACK_ERR 0x15
 
 /* Buffers in D2 SRAM for USB DMA compatibility */
-static uint8_t rxbuf[512] __attribute__((section(".RAM_D2")));
+static uint8_t rxbuf[64] __attribute__((section(".RAM_D2")));
 static uint8_t txbuf[512] __attribute__((section(".RAM_D2")));
 
-static uint32_t rx_state = 0; /* 0=idle, 1=reading */
+/* Accumulation buffer — collects USB packets until command is complete */
+static uint8_t cmdbuf[512] __attribute__((section(".RAM_D2")));
+static uint32_t cmd_pos = 0;
+
 static uint32_t tx_state = 0; /* 0=idle, 1=writing */
 static uint32_t tx_len = 0;
 
@@ -253,6 +256,36 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
   }
 }
 
+/* Determine expected command length from header bytes.
+   Returns 0 if we don't have enough bytes yet to tell. */
+static uint32_t expected_cmd_len(const uint8_t *buf, uint32_t have) {
+  if (have == 0)
+    return 0;
+  switch (buf[0]) {
+  case CMD_PING:
+    return 1;
+  case CMD_JEDEC_ID:
+    return 1;
+  case CMD_CHIP_ERASE:
+    return 1;
+  case CMD_ERASE_4K:
+    return 4;
+  case CMD_ERASE_64K:
+    return 4;
+  case CMD_READ:
+    return 6;
+  case CMD_PAGE_PROG:
+    if (have < 5)
+      return 0; /* need header to know data length */
+    {
+      uint16_t plen = buf[4] ? buf[4] : 256;
+      return 5 + plen;
+    }
+  default:
+    return 1;
+  }
+}
+
 void usbx_cdc_acm_read_write_run(void) {
   if (cdc_acm == UX_NULL)
     return;
@@ -267,24 +300,28 @@ void usbx_cdc_acm_read_write_run(void) {
   if (tx_state == 1 && tx_len > 0) {
     ULONG actual = 0;
     status = ux_device_class_cdc_acm_write_run(cdc_acm, txbuf, tx_len, &actual);
-    if (status == UX_STATE_NEXT) {
-      tx_state = 0;
-      tx_len = 0;
-    } else if (status < UX_STATE_NEXT) {
+    if (status == UX_STATE_NEXT || status < UX_STATE_NEXT) {
       tx_state = 0;
       tx_len = 0;
     }
-    return; /* don't read while writing */
+    return;
   }
 
-  /* --- RX: read command from host --- */
-  if (tx_state == 0) {
-    ULONG actual = 0;
-    status = ux_device_class_cdc_acm_read_run(cdc_acm, rxbuf, sizeof(rxbuf),
-                                              &actual);
-    if (status == UX_STATE_NEXT && actual > 0) {
-      /* Got a command — process it */
-      process_cmd(rxbuf, actual);
+  /* --- RX: accumulate USB packets into cmdbuf --- */
+  ULONG actual = 0;
+  status =
+      ux_device_class_cdc_acm_read_run(cdc_acm, rxbuf, sizeof(rxbuf), &actual);
+  if (status == UX_STATE_NEXT && actual > 0) {
+    uint32_t space = sizeof(cmdbuf) - cmd_pos;
+    uint32_t copy = (actual < space) ? (uint32_t)actual : space;
+    memcpy(&cmdbuf[cmd_pos], rxbuf, copy);
+    cmd_pos += copy;
+
+    /* Check if we have a complete command */
+    uint32_t needed = expected_cmd_len(cmdbuf, cmd_pos);
+    if (needed > 0 && cmd_pos >= needed) {
+      process_cmd(cmdbuf, cmd_pos);
+      cmd_pos = 0;
       if (tx_len > 0) {
         tx_state = 1;
       }
