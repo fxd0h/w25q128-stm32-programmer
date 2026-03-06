@@ -107,45 +107,153 @@ VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance) {
 }
 
 /* USER CODE BEGIN 2 */
+#include "w25q128.h"
 #include <string.h>
+
 extern UART_HandleTypeDef hcom_uart[];
+extern W25Q_HandleTypeDef hw25q;
 
-static uint32_t tx_tick = 0;
+/* CDC protocol commands */
+#define CMD_JEDEC_ID 0x01
+#define CMD_READ 0x02       /* ADDR[3] LEN_HI LEN_LO → data[LEN] */
+#define CMD_ERASE_4K 0x03   /* ADDR[3] → ACK */
+#define CMD_PAGE_PROG 0x04  /* ADDR[3] LEN DATA[LEN] → ACK */
+#define CMD_CHIP_ERASE 0x05 /* → ACK */
+#define CMD_ERASE_64K 0x06  /* ADDR[3] → ACK */
+#define CMD_PING 0xFF       /* → "OK" */
+
+#define ACK_OK 0x06
+#define ACK_ERR 0x15
+
+/* Buffers in D2 SRAM for USB DMA compatibility */
+static uint8_t rxbuf[512] __attribute__((section(".RAM_D2")));
+static uint8_t txbuf[512] __attribute__((section(".RAM_D2")));
+
+static uint32_t rx_state = 0; /* 0=idle, 1=reading */
 static uint32_t tx_state = 0; /* 0=idle, 1=writing */
-static uint8_t tx_msg[8] __attribute__((section(".RAM_D2")));
-static int tx_msg_init = 0;
-static uint32_t write_wait_count = 0;
-static uint32_t write_next_count = 0;
-static uint32_t write_error_count = 0;
-static uint32_t last_wr_status = 99;
-static uint32_t dbg_tick = 0;
+static uint32_t tx_len = 0;
 
-/* Fast non-blocking UART debug: max 10ms */
+/* Debug output via VCP */
 static void dbg(const char *s, uint16_t len) {
   HAL_UART_Transmit(&hcom_uart[0], (uint8_t *)s, len, 10);
 }
 
-void usbx_cdc_acm_read_write_run(void) {
-  /* One-time init: .RAM_D2 is not initialized by startup code */
-  if (!tx_msg_init) {
-    memcpy(tx_msg, "HELLO\r\n", 7);
-    tx_msg[7] = 0;
-    tx_msg_init = 1;
-  }
-  /* Short debug every 5s */
-  if (HAL_GetTick() - dbg_tick >= 5000) {
-    dbg_tick = HAL_GetTick();
-    char b[48];
-    int n = snprintf(
-        b, sizeof(b), "S%u T%lu W%lu/%lu/%lu R%lu\r\n",
-        (unsigned)
-            _ux_system_slave->ux_system_slave_device.ux_slave_device_state,
-        (unsigned long)tx_state, (unsigned long)write_wait_count,
-        (unsigned long)write_next_count, (unsigned long)write_error_count,
-        (unsigned long)last_wr_status);
-    dbg(b, (uint16_t)n);
+/* Process a received command and prepare response in txbuf */
+static void process_cmd(uint8_t *cmd, uint32_t len) {
+  W25Q_Status st;
+
+  if (len == 0)
+    return;
+
+  switch (cmd[0]) {
+  case CMD_PING:
+    txbuf[0] = 'O';
+    txbuf[1] = 'K';
+    tx_len = 2;
+    break;
+
+  case CMD_JEDEC_ID: {
+    uint8_t id[3];
+    st = W25Q_ReadJEDEC(&hw25q, id);
+    if (st == W25Q_OK) {
+      txbuf[0] = ACK_OK;
+      txbuf[1] = id[0];
+      txbuf[2] = id[1];
+      txbuf[3] = id[2];
+      tx_len = 4;
+    } else {
+      txbuf[0] = ACK_ERR;
+      txbuf[1] = (uint8_t)st;
+      tx_len = 2;
+    }
+    break;
   }
 
+  case CMD_READ: {
+    /* CMD_READ ADDR[3] LEN_HI LEN_LO */
+    if (len < 6) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    uint32_t addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
+    uint16_t rlen = ((uint16_t)cmd[4] << 8) | cmd[5];
+    if (rlen > sizeof(txbuf) - 1)
+      rlen = sizeof(txbuf) - 1;
+    txbuf[0] = ACK_OK;
+    st = W25Q_Read(&hw25q, addr, &txbuf[1], rlen);
+    if (st == W25Q_OK) {
+      tx_len = 1 + rlen;
+    } else {
+      txbuf[0] = ACK_ERR;
+      txbuf[1] = (uint8_t)st;
+      tx_len = 2;
+    }
+    break;
+  }
+
+  case CMD_ERASE_4K: {
+    if (len < 4) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    uint32_t addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
+    st = W25Q_EraseSector(&hw25q, addr);
+    txbuf[0] = (st == W25Q_OK) ? ACK_OK : ACK_ERR;
+    tx_len = 1;
+    break;
+  }
+
+  case CMD_ERASE_64K: {
+    if (len < 4) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    uint32_t addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
+    st = W25Q_EraseBlock64(&hw25q, addr);
+    txbuf[0] = (st == W25Q_OK) ? ACK_OK : ACK_ERR;
+    tx_len = 1;
+    break;
+  }
+
+  case CMD_PAGE_PROG: {
+    /* CMD_PAGE_PROG ADDR[3] LEN DATA[LEN] */
+    if (len < 5) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    uint32_t addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
+    uint8_t plen = cmd[4];
+    if (len < (uint32_t)(5 + plen)) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    st = W25Q_PageProgram(&hw25q, addr, &cmd[5], plen);
+    txbuf[0] = (st == W25Q_OK) ? ACK_OK : ACK_ERR;
+    tx_len = 1;
+    break;
+  }
+
+  case CMD_CHIP_ERASE:
+    dbg("CHIP_ERASE...\r\n", 15);
+    st = W25Q_EraseChip(&hw25q);
+    txbuf[0] = (st == W25Q_OK) ? ACK_OK : ACK_ERR;
+    tx_len = 1;
+    dbg("CHIP_ERASE done\r\n", 17);
+    break;
+
+  default:
+    txbuf[0] = ACK_ERR;
+    tx_len = 1;
+    break;
+  }
+}
+
+void usbx_cdc_acm_read_write_run(void) {
   if (cdc_acm == UX_NULL)
     return;
 
@@ -155,27 +263,31 @@ void usbx_cdc_acm_read_write_run(void) {
 
   UINT status;
 
-  if (tx_state == 0) {
-    if (HAL_GetTick() - tx_tick >= 2000) {
-      tx_tick = HAL_GetTick();
-      tx_state = 1;
-      write_wait_count = 0;
+  /* --- TX: send response if pending --- */
+  if (tx_state == 1 && tx_len > 0) {
+    ULONG actual = 0;
+    status = ux_device_class_cdc_acm_write_run(cdc_acm, txbuf, tx_len, &actual);
+    if (status == UX_STATE_NEXT) {
+      tx_state = 0;
+      tx_len = 0;
+    } else if (status < UX_STATE_NEXT) {
+      tx_state = 0;
+      tx_len = 0;
     }
+    return; /* don't read while writing */
   }
 
-  if (tx_state == 1) {
+  /* --- RX: read command from host --- */
+  if (tx_state == 0) {
     ULONG actual = 0;
-    status = ux_device_class_cdc_acm_write_run(cdc_acm, tx_msg,
-                                               sizeof(tx_msg) - 1, &actual);
-    last_wr_status = status;
-    if (status == UX_STATE_NEXT) {
-      write_next_count++;
-      tx_state = 0;
-    } else if (status < UX_STATE_NEXT) {
-      write_error_count++;
-      tx_state = 0;
-    } else {
-      write_wait_count++;
+    status = ux_device_class_cdc_acm_read_run(cdc_acm, rxbuf, sizeof(rxbuf),
+                                              &actual);
+    if (status == UX_STATE_NEXT && actual > 0) {
+      /* Got a command — process it */
+      process_cmd(rxbuf, actual);
+      if (tx_len > 0) {
+        tx_state = 1;
+      }
     }
   }
 }

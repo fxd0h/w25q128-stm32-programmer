@@ -52,7 +52,9 @@ QSPI_HandleTypeDef hqspi;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
-
+#include "w25q128.h"
+SPI_HandleTypeDef hspi1;
+W25Q_HandleTypeDef hw25q;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,6 +63,7 @@ static void MPU_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_QUADSPI_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -104,8 +107,9 @@ int main(void) {
   MX_GPIO_Init();
   MX_QUADSPI_Init();
   MX_USB_OTG_FS_PCD_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-
+  W25Q_Init(&hw25q, &hspi1, GPIOD, GPIO_PIN_14);
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -333,12 +337,53 @@ static void MX_GPIO_Init(void) {
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
-
+  /* PD14 = SPI CS for W25Q128 (active low, idle high) */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+static void MX_SPI1_Init(void) {
+  /* SPI1: PA5=SCK, PA6=MISO (GPIOA AF5), PB5=MOSI (GPIOB AF5) */
+  __HAL_RCC_SPI1_CLK_ENABLE();
+  /* GPIOA and GPIOB clocks already enabled by MX_GPIO_Init */
 
+  GPIO_InitTypeDef gi = {0};
+  /* PA5 (SCK) + PA6 (MISO) */
+  gi.Pin = GPIO_PIN_5 | GPIO_PIN_6;
+  gi.Mode = GPIO_MODE_AF_PP;
+  gi.Pull = GPIO_NOPULL;
+  gi.Speed = GPIO_SPEED_FREQ_HIGH;
+  gi.Alternate = GPIO_AF5_SPI1;
+  HAL_GPIO_Init(GPIOA, &gi);
+
+  /* PB5 (MOSI) — separate port */
+  gi.Pin = GPIO_PIN_5;
+  HAL_GPIO_Init(GPIOB, &gi);
+
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_ENABLE;
+  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK) {
+    /* SPI init failed — flash programmer won't work but USB stays up */
+  }
+}
 /* USER CODE END 4 */
 
 /* MPU Configuration */
