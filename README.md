@@ -12,29 +12,70 @@ Built for BIOS recovery of LattePanda Sigma boards on macOS (where CH341A is unr
 - Auto-retry with protocol resync on CDC errors
 - SPI at 30 MHz (prescaler /4)
 
-## Hardware Setup
+## Wiring
 
-### Pinout: STM32H743 Nucleo-144 → W25Q128 (SOIC-8)
+### W25Q128 SOIC-8 Chip Pinout
 
 ```
-W25Q128 Pin    Signal      STM32 Pin    Function
-─────────────────────────────────────────────────
-Pin 1          CS#         PA10         GPIO (active low)
-Pin 2          DO/MISO     PB4          SPI1_MISO
-Pin 3          WP#         PA3          GPIO HIGH
-Pin 4          GND         GND          Ground
-Pin 5          DI/MOSI     PB5          SPI1_MOSI
-Pin 6          CLK         PB3          SPI1_SCK
-Pin 7          HOLD#       PA3          GPIO HIGH (shared with WP#)
-Pin 8          VCC         PA2          GPIO HIGH (3.3V)
+        W25Q128 (top view)
+        ┌──── dot = pin 1
+        ▼
+      ┌────────┐
+  CS# │1 ●    8│ VCC
+   DO │2      7│ HOLD#
+  WP# │3      6│ CLK
+  GND │4      5│ DI
+      └────────┘
 ```
 
-> **Note**: PA2 provides 3.3V power to the chip via GPIO output (~15mA). For in-circuit programming with SOIC-8 clip, ensure the target board is fully powered off.
+### Wiring to STM32H743 Nucleo-144
+
+```
+  W25Q128                          STM32 Nucleo-144
+  ┌────────┐
+  │1  CS#  │─────────────────────► PA10
+  │2  DO   │─────────────────────► PB4  (SPI1 MISO)
+  │3  WP#  │─────┐
+  │4  GND  │──┐  ├───────────────► PA3  (GPIO HIGH)
+  │5  DI   │  │  │
+  │6  CLK  │  │  │
+  │7 HOLD# │──┼──┘
+  │8  VCC  │  │
+  └────────┘  │
+              │
+  Pin 5 DI ───┼──────────────────► PB5  (SPI1 MOSI)
+  Pin 6 CLK ──┼──────────────────► PB3  (SPI1 SCK)
+  Pin 8 VCC ──┼──────────────────► PA2  (GPIO HIGH, 3.3V power)
+  Pin 4 GND ──└──────────────────► GND
+```
+
+| W25Q128 Pin | Signal | STM32 Pin | Notes |
+|---|---|---|---|
+| 1 | CS# | **PA10** | Chip select (active low) |
+| 2 | DO (MISO) | **PB4** | SPI1_MISO |
+| 3 | WP# | **PA3** | Tied HIGH (write protect disabled) |
+| 4 | GND | **GND** | Ground — **don't forget this one!** |
+| 5 | DI (MOSI) | **PB5** | SPI1_MOSI |
+| 6 | CLK | **PB3** | SPI1_SCK |
+| 7 | HOLD# | **PA3** | Tied HIGH with WP# (same wire) |
+| 8 | VCC | **PA2** | 3.3V power from GPIO (~15mA) |
+
+### In-Circuit Programming (SOIC-8 Clip)
+
+To program a chip soldered on a board (e.g. LattePanda):
+
+1. **Power off** the target board completely (disconnect power supply + RTC battery)
+2. Attach the SOIC-8 clip to the W25Q128 — align pin 1 (red wire) with the dot on the chip
+3. The STM32 provides 3.3V through PA2 — no external power needed
+4. Run `python3 tools/flash_w25q.py id` to verify connection (expect `EF 40 18`)
+5. If you get `FF FF FF`, reposition the clip for better contact
+
+> **⚠️ Important**: The target board's chipset may load the SPI bus even when powered off. If the clip reads intermittently, try applying gentle pressure or slightly repositioning it.
 
 ### Requirements
 
 - STM32H743ZI Nucleo-144 board
-- USB cable (board to Mac)
+- USB cable (board to Mac/PC)
 - ST-LINK for firmware flashing
 - SOIC-8 clip or direct wiring to W25Q128
 
