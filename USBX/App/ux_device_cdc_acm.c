@@ -123,6 +123,7 @@ extern W25Q_HandleTypeDef hw25q;
 #define CMD_SELF_TEST                                                          \
   0x10                /* → ACK + result (internal SPI test, no CDC data)     \
                        */
+#define CMD_PROG_VERIFY 0x11  /* Write pages + read-back verify on MCU */
 #define CMD_PING 0xFF /* → "OK" */
 
 #define ACK_OK 0x06
@@ -130,10 +131,11 @@ extern W25Q_HandleTypeDef hw25q;
 
 /* Buffers in D2 SRAM for USB DMA compatibility */
 static uint8_t rxbuf[64] __attribute__((section(".RAM_D2")));
-static uint8_t txbuf[512] __attribute__((section(".RAM_D2")));
+static uint8_t txbuf[4097] __attribute__((section(".RAM_D2")));  /* 4KB read + 1 ACK */
 
-/* Accumulation buffer — collects USB packets until command is complete */
-static uint8_t cmdbuf[512] __attribute__((section(".RAM_D2")));
+/* Accumulation buffer — collects USB packets until command is complete.
+   Must be large enough for CMD_PROG_VERIFY: 6 header + 4096 data */
+static uint8_t cmdbuf[4102] __attribute__((section(".RAM_D2")));
 static uint32_t cmd_pos = 0;
 
 static uint32_t tx_state = 0; /* 0=idle, 1=writing */
@@ -241,6 +243,70 @@ static void process_cmd(uint8_t *cmd, uint32_t len) {
     st = W25Q_PageProgram(&hw25q, addr, &cmd[5], plen);
     txbuf[0] = (st == W25Q_OK) ? ACK_OK : ACK_ERR;
     tx_len = 1;
+    break;
+  }
+
+  case CMD_PROG_VERIFY: {
+    /* CMD_PROG_VERIFY ADDR[3] LEN_HI LEN_LO DATA[LEN]
+       Programs pages, reads back internally, compares.
+       Returns: ACK_OK | ACK_ERR + fail_offset[2] */
+    if (len < 6) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    uint32_t pv_addr = ((uint32_t)cmd[1] << 16) | ((uint32_t)cmd[2] << 8) | cmd[3];
+    uint16_t pv_len = ((uint16_t)cmd[4] << 8) | cmd[5];
+    uint8_t *pv_data = &cmd[6];
+    if (len < (uint32_t)(6 + pv_len) || pv_len > 4096) {
+      txbuf[0] = ACK_ERR;
+      tx_len = 1;
+      break;
+    }
+    /* Program pages (256 bytes each) */
+    uint16_t pv_off = 0;
+    while (pv_off < pv_len) {
+      uint16_t pg_len = (pv_len - pv_off > 256) ? 256 : (pv_len - pv_off);
+      st = W25Q_PageProgram(&hw25q, pv_addr + pv_off, &pv_data[pv_off], pg_len);
+      if (st != W25Q_OK) {
+        txbuf[0] = ACK_ERR;
+        txbuf[1] = (pv_off >> 8) & 0xFF;
+        txbuf[2] = pv_off & 0xFF;
+        tx_len = 3;
+        goto pv_done;
+      }
+      pv_off += pg_len;
+    }
+    /* Read back and compare internally */
+    {
+      uint8_t rb[256];
+      pv_off = 0;
+      while (pv_off < pv_len) {
+        uint16_t ck_len = (pv_len - pv_off > 256) ? 256 : (pv_len - pv_off);
+        st = W25Q_Read(&hw25q, pv_addr + pv_off, rb, ck_len);
+        if (st != W25Q_OK) {
+          txbuf[0] = ACK_ERR;
+          txbuf[1] = (pv_off >> 8) & 0xFF;
+          txbuf[2] = pv_off & 0xFF;
+          tx_len = 3;
+          goto pv_done;
+        }
+        for (uint16_t i = 0; i < ck_len; i++) {
+          if (rb[i] != pv_data[pv_off + i]) {
+            uint16_t fail = pv_off + i;
+            txbuf[0] = ACK_ERR;
+            txbuf[1] = (fail >> 8) & 0xFF;
+            txbuf[2] = fail & 0xFF;
+            tx_len = 3;
+            goto pv_done;
+          }
+        }
+        pv_off += ck_len;
+      }
+    }
+    txbuf[0] = ACK_OK;
+    tx_len = 1;
+  pv_done:
     break;
   }
 
@@ -395,6 +461,13 @@ static uint32_t expected_cmd_len(const uint8_t *buf, uint32_t have) {
     {
       uint16_t plen = buf[4] ? buf[4] : 256;
       return 5 + plen;
+    }
+  case CMD_PROG_VERIFY:
+    if (have < 6)
+      return 0; /* need header to know data length */
+    {
+      uint16_t pvlen = ((uint16_t)buf[4] << 8) | buf[5];
+      return 6 + pvlen;
     }
   default:
     return 1;

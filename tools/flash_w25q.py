@@ -28,6 +28,7 @@ CMD_PAGE_PROG  = 0x04  # ADDR[3] LEN DATA[LEN] → ACK
 CMD_CHIP_ERASE = 0x05  # → ACK
 CMD_ERASE_64K  = 0x06  # ADDR[3] → ACK
 CMD_SELF_TEST  = 0x10  # → ACK + result (internal SPI test)
+CMD_PROG_VERIFY = 0x11  # → Write + verify on MCU (no USB round-trip)
 CMD_PING       = 0xFF  # → "OK"
 
 ACK_OK  = 0x06
@@ -165,9 +166,31 @@ class W25QFlasher:
         # Wait for ACK — firmware needs time to accumulate USB packets
         # and execute SPI page program (~3ms at 750KHz + program time)
         r = self.ser.read(1)
-        # Small settle delay for USB between consecutive page writes
-        time.sleep(0.003)
         return len(r) >= 1 and r[0] == ACK_OK
+
+    def prog_verify(self, addr, data):
+        """Write + verify on MCU. Sends up to 4KB, MCU programs pages
+           and reads back internally. No USB round-trip for verify."""
+        dlen = len(data)
+        assert dlen <= 4096
+        header = bytes([CMD_PROG_VERIFY,
+                        (addr >> 16) & 0xFF,
+                        (addr >> 8) & 0xFF,
+                        addr & 0xFF,
+                        (dlen >> 8) & 0xFF,
+                        dlen & 0xFF])
+        self.ser.write(header + bytes(data))
+        self.ser.flush()
+        # Timeout: 16 page programs × 3ms + read-back time
+        r = self.ser.read(1)
+        if len(r) >= 1 and r[0] == ACK_OK:
+            return True
+        # Error — read fail offset if available
+        extra = self.ser.read(2)
+        if len(extra) >= 2:
+            fail_off = (extra[0] << 8) | extra[1]
+            print(f'\n  MCU verify fail at offset +0x{fail_off:04X} (addr 0x{addr+fail_off:06X})')
+        return False
 
     def _resync(self):
         """Re-synchronize CDC protocol after error."""
@@ -360,19 +383,28 @@ def do_program(f, args):
         progress(min(erased, erase_size), erase_size, 'Erasing', t0)
     print(f'  Erase: {time.time()-t0:.1f}s')
 
-    # 2. Program (with per-page verify)
-    print(f'Step 2/2: Programming + verifying {human_size(fsize)}...')
+    # 2. Program (write+verify on MCU, 4KB chunks)
+    VERIFY_CHUNK = SECTOR_SIZE  # 4KB
+    print(f'Step 2/2: Programming + MCU-verify {human_size(fsize)} (4KB chunks)...')
     t0 = time.time()
     offset = 0
-    retries_total = 0
     while offset < fsize:
-        plen = min(PAGE_SIZE, fsize - offset)
-        page = data[offset:offset+plen]
-        ok = f.page_program_verified(addr + offset, page)
-        if not ok:
+        chunk_size = min(VERIFY_CHUNK, fsize - offset)
+        chunk_data = data[offset:offset+chunk_size]
+        success = False
+        for attempt in range(3):
+            ok = f.prog_verify(addr + offset, chunk_data)
+            if ok:
+                success = True
+                break
+            if attempt < 2:
+                print(f'\n  WARN: prog_verify fail at 0x{addr+offset:06X}, attempt {attempt+1}')
+                f._resync()
+                time.sleep(0.05)
+        if not success:
             print(f'\nPROGRAM FAILED at 0x{addr+offset:06X} (after retries)')
             return False
-        offset += plen
+        offset += chunk_size
         progress(offset, fsize, 'Write+Verify', t0)
     print(f'  Program+Verify: {time.time()-t0:.1f}s')
 
